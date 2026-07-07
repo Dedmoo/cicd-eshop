@@ -10,6 +10,16 @@
         width: 100%;
     }
 
+    &-staj-demo-banner {
+        background-color: #83D01B;
+        color: #FFFFFF;
+        font-size: 1.1rem;
+        font-weight: 700;
+        padding: 12px;
+        text-align: center;
+        width: 100%;
+    }
+
     &-title {
         position: relative;
         top: $banner-height / 3.5;

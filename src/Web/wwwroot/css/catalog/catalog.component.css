@@ -4,6 +4,15 @@
   height: 260px;
   width: 100%; }
 
+.esh-staj-demo-banner {
+  background-color: #83D01B;
+  color: #FFFFFF;
+  font-size: 1.1rem;
+  font-weight: 700;
+  padding: 12px;
+  text-align: center;
+  width: 100%; }
+
 .esh-catalog-title {
   position: relative;
   top: 74.28571px; }
