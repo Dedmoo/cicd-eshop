@@ -177,7 +177,7 @@ app.UseSwaggerUI(c =>
 app.MapControllers();
 app.MapEndpoints();
 
-app.MapGet("/health", () => new { status = "ok", service = "eshop-staj-demo", version = "1" });
+app.MapGet("/health", () => new { status = "ok", service = "eshop-staj-demo", version = "2" });
 
 app.Logger.LogInformation("LAUNCHING PublicApi");
 app.Run();
