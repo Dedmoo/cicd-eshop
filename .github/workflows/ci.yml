@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 concurrency:
-  group: wsl-self-hosted-runner
+  group: wsl-self-hosted-${{ github.repository }}
   cancel-in-progress: true
 
 jobs:

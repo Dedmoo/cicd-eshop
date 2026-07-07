@@ -19,7 +19,7 @@ on:
 run-name: Deploy - ${{ github.actor }} - ${{ inputs.aciklama }}
 
 concurrency:
-  group: wsl-self-hosted-runner
+  group: wsl-self-hosted-${{ github.repository }}
   cancel-in-progress: true
 
 jobs:
