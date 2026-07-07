@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       aciklama:
-        description: 'Ne deploy ediliyor (ornek: catalog api guncellendi)'
+        description: 'Ne deploy ediliyor (ornek: ana sayfa metni guncellendi)'
         required: true
         type: string
       deploy_kaynak:
@@ -34,7 +34,6 @@ jobs:
       - name: Deploy ozeti
         run: |
           COMMIT_MSG=$(git log -1 --pretty=%s)
-          COMMIT_AUTHOR=$(git log -1 --pretty=%an)
           echo "Deploy eden: ${{ github.actor }}"
           echo "Deploy kaynagi: ${{ inputs.deploy_kaynak }}"
           echo "Commit: $COMMIT_MSG"
@@ -42,6 +41,7 @@ jobs:
           echo "- Deploy eden: **${{ github.actor }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Kaynak: **${{ inputs.deploy_kaynak }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Commit: $COMMIT_MSG" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Hedefler: **PublicApi (5200)** + **Web magaza (5001)**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Not: ${{ inputs.aciklama }}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: SQL Server hazir mi
@@ -75,17 +75,26 @@ jobs:
             -R "${{ github.repository }}" \
             -n eshopapi-publish \
             -D /tmp/eshopapi-artifact
-          echo "ARTIFACT_DIR=/tmp/eshopapi-artifact" >> "$GITHUB_ENV"
+          gh run download "$RUN_ID" \
+            -R "${{ github.repository }}" \
+            -n eshopweb-publish \
+            -D /tmp/eshopweb-artifact
+          echo "API_ARTIFACT_DIR=/tmp/eshopapi-artifact" >> "$GITHUB_ENV"
+          echo "WEB_ARTIFACT_DIR=/tmp/eshopweb-artifact" >> "$GITHUB_ENV"
 
-      - name: Mevcut surumu yedekle
+      - name: Mevcut surumleri yedekle
         run: |
           if [ -d /opt/eshopapi ]; then
             rm -rf /opt/eshopapi.previous
             cp -a /opt/eshopapi /opt/eshopapi.previous
-            echo "- Onceki surum yedeklendi" >> "$GITHUB_STEP_SUMMARY"
           fi
+          if [ -d /opt/eshopweb ]; then
+            rm -rf /opt/eshopweb.previous
+            cp -a /opt/eshopweb /opt/eshopweb.previous
+          fi
+          echo "- Onceki surumler yedeklendi" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Yayinla (kaynak koddan)
+      - name: Yayinla API (kaynak koddan)
         if: inputs.deploy_kaynak == 'kaynak_koddan_derle'
         run: |
           STAGING=$(mktemp -d)
@@ -94,42 +103,67 @@ jobs:
           rsync -a --delete "$STAGING/" /opt/eshopapi/
           rm -rf "$STAGING"
 
-      - name: Yayinla (CI artifact)
+      - name: Yayinla Web (kaynak koddan)
+        if: inputs.deploy_kaynak == 'kaynak_koddan_derle'
+        run: |
+          STAGING=$(mktemp -d)
+          dotnet publish src/Web/Web.csproj --configuration Release --output "$STAGING" /p:UseSharedCompilation=false
+          mkdir -p /opt/eshopweb
+          rsync -a --delete "$STAGING/" /opt/eshopweb/
+          rm -rf "$STAGING"
+
+      - name: Yayinla API (CI artifact)
         if: inputs.deploy_kaynak == 'ci_artifact'
         run: |
           mkdir -p /opt/eshopapi
-          rsync -a --delete "${ARTIFACT_DIR}/" /opt/eshopapi/
+          rsync -a --delete "${API_ARTIFACT_DIR}/" /opt/eshopapi/
+
+      - name: Yayinla Web (CI artifact)
+        if: inputs.deploy_kaynak == 'ci_artifact'
+        run: |
+          mkdir -p /opt/eshopweb
+          rsync -a --delete "${WEB_ARTIFACT_DIR}/" /opt/eshopweb/
 
       - name: Deploy bilgisini kaydet
         run: |
-          cat > /opt/eshopapi/.deploy-info <<EOF
+          for target in eshopapi eshopweb; do
+            cat > "/opt/${target}/.deploy-info" <<EOF
           deploy_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           commit=${{ github.sha }}
           deployed_by=${{ github.actor }}
           deploy_kaynak=${{ inputs.deploy_kaynak }}
           note=${{ inputs.aciklama }}
           EOF
+          done
 
-      - name: Servisi yeniden baslat
+      - name: Servisleri yeniden baslat
         run: |
           pkill -f 'dotnet /opt/eshopapi' || true
+          pkill -f 'dotnet /opt/eshopweb' || true
           sleep 1
           systemctl restart eshopapi
+          systemctl restart eshopweb
 
-      - name: Canli saglik kontrolu
-        id: health
+      - name: API saglik kontrolu
+        id: api_health
         continue-on-error: true
         run: bash .github/scripts/verify-health.sh http://127.0.0.1:5200
 
+      - name: Web magaza saglik kontrolu
+        id: web_health
+        continue-on-error: true
+        run: bash .github/scripts/verify-health.sh http://127.0.0.1:5001
+
       - name: Saglik basarisiz - otomatik geri al
-        if: steps.health.outcome == 'failure'
+        if: steps.api_health.outcome == 'failure' || steps.web_health.outcome == 'failure'
         run: |
-          if [ -d /opt/eshopapi.previous ]; then
-            bash .github/scripts/rollback-to-previous.sh
+          if [ -d /opt/eshopapi.previous ] || [ -d /opt/eshopweb.previous ]; then
+            bash .github/scripts/rollback-eshop-all.sh
             bash .github/scripts/verify-health.sh http://127.0.0.1:5200 || true
+            bash .github/scripts/verify-health.sh http://127.0.0.1:5001 || true
             echo "- Otomatik rollback yapildi" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Deploy basarisiz (health check)
-        if: steps.health.outcome == 'failure'
+        if: steps.api_health.outcome == 'failure' || steps.web_health.outcome == 'failure'
         run: exit 1

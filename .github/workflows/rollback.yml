@@ -43,11 +43,11 @@ jobs:
       - name: Onceki klasorden geri al
         if: inputs.rollback_modu == 'onceki_klasor'
         run: |
-          if [ ! -d /opt/eshopapi.previous ]; then
+          if [ ! -d /opt/eshopapi.previous ] && [ ! -d /opt/eshopweb.previous ]; then
             echo "Geri alinacak onceki surum yok"
             exit 1
           fi
-          bash .github/scripts/rollback-to-previous.sh
+          bash .github/scripts/rollback-eshop-all.sh
 
       - name: .NET build ve test (commit rollback)
         if: inputs.rollback_modu == 'belirli_commit'
@@ -67,17 +67,29 @@ jobs:
             rm -rf /opt/eshopapi.previous
             cp -a /opt/eshopapi /opt/eshopapi.previous
           fi
-          STAGING=$(mktemp -d)
-          dotnet publish src/PublicApi/PublicApi.csproj --configuration Release --output "$STAGING" /p:UseSharedCompilation=false
-          mkdir -p /opt/eshopapi
-          rsync -a --delete "$STAGING/" /opt/eshopapi/
-          rm -rf "$STAGING"
+          if [ -d /opt/eshopweb ]; then
+            rm -rf /opt/eshopweb.previous
+            cp -a /opt/eshopweb /opt/eshopweb.previous
+          fi
+          API_STAGING=$(mktemp -d)
+          WEB_STAGING=$(mktemp -d)
+          dotnet publish src/PublicApi/PublicApi.csproj --configuration Release --output "$API_STAGING" /p:UseSharedCompilation=false
+          dotnet publish src/Web/Web.csproj --configuration Release --output "$WEB_STAGING" /p:UseSharedCompilation=false
+          mkdir -p /opt/eshopapi /opt/eshopweb
+          rsync -a --delete "$API_STAGING/" /opt/eshopapi/
+          rsync -a --delete "$WEB_STAGING/" /opt/eshopweb/
+          rm -rf "$API_STAGING" "$WEB_STAGING"
           pkill -f 'dotnet /opt/eshopapi' || true
+          pkill -f 'dotnet /opt/eshopweb' || true
           sleep 1
           systemctl restart eshopapi
+          systemctl restart eshopweb
 
-      - name: Canli saglik kontrolu
+      - name: API saglik kontrolu
         run: bash .github/scripts/verify-health.sh http://127.0.0.1:5200
+
+      - name: Web magaza saglik kontrolu
+        run: bash .github/scripts/verify-health.sh http://127.0.0.1:5001
 
       - name: Rollback ozeti
         if: always()

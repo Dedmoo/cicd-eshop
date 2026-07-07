@@ -22,12 +22,14 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.AddConsole();
 
-if (builder.Environment.IsDevelopment() || builder.Environment.EnvironmentName == "Docker"){
-    // Configure SQL Server (local)
+if (builder.Environment.IsDevelopment()
+    || builder.Environment.EnvironmentName == "Docker"
+    || !string.IsNullOrEmpty(builder.Configuration.GetConnectionString("CatalogConnection")))
+{
     Microsoft.eShopWeb.Infrastructure.Dependencies.ConfigureServices(builder.Configuration, builder.Services);
 }
-else{
-    // Configure SQL Server (prod)
+else
+{
     var credential = new ChainedTokenCredential(new AzureDeveloperCliCredential(), new DefaultAzureCredential());
     builder.Configuration.AddAzureKeyVault(new Uri(builder.Configuration["AZURE_KEY_VAULT_ENDPOINT"] ?? ""), credential);
     builder.Services.AddDbContext<CatalogContext>(c =>
@@ -44,11 +46,12 @@ else{
 
 builder.Services.AddCookieSettings();
 
+var useHttps = builder.Configuration.GetValue("UseHttpsRedirection", false);
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
         options.Cookie.HttpOnly = true;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        options.Cookie.SecurePolicy = useHttps ? CookieSecurePolicy.Always : CookieSecurePolicy.SameAsRequest;
         options.Cookie.SameSite = SameSiteMode.Lax;
     });
 
@@ -178,10 +181,17 @@ else
 {
     app.Logger.LogInformation("Adding non-Development middleware...");
     app.UseExceptionHandler("/Error");
+}
+
+if (builder.Configuration.GetValue("UseHsts", false))
+{
     app.UseHsts();
 }
 
-app.UseHttpsRedirection();
+if (builder.Configuration.GetValue("UseHttpsRedirection", false))
+{
+    app.UseHttpsRedirection();
+}
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
 app.UseRouting();

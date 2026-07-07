@@ -13,11 +13,16 @@ on:
         required: false
         type: boolean
         default: false
-      artifact_name:
-        description: Artifact adi
+      api_artifact_name:
+        description: PublicApi artifact adi
         required: false
         type: string
         default: eshopapi-publish
+      web_artifact_name:
+        description: Web artifact adi
+        required: false
+        type: string
+        default: eshopweb-publish
 
 jobs:
   build-test:
@@ -36,21 +41,37 @@ jobs:
       - name: Publish (artifact icin)
         if: inputs.upload_artifact
         run: |
-          STAGING=$(mktemp -d)
+          API_STAGING=$(mktemp -d)
+          WEB_STAGING=$(mktemp -d)
           dotnet publish src/PublicApi/PublicApi.csproj \
             --configuration ${{ inputs.configuration }} \
-            --output "$STAGING" \
+            --output "$API_STAGING" \
             /p:UseSharedCompilation=false
-          echo "STAGING_DIR=$STAGING" >> "$GITHUB_ENV"
+          dotnet publish src/Web/Web.csproj \
+            --configuration ${{ inputs.configuration }} \
+            --output "$WEB_STAGING" \
+            /p:UseSharedCompilation=false
+          echo "API_STAGING_DIR=$API_STAGING" >> "$GITHUB_ENV"
+          echo "WEB_STAGING_DIR=$WEB_STAGING" >> "$GITHUB_ENV"
 
-      - name: Artifact yukle
+      - name: Artifact yukle (API)
         if: inputs.upload_artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.artifact_name }}
-          path: ${{ env.STAGING_DIR }}
+          name: ${{ inputs.api_artifact_name }}
+          path: ${{ env.API_STAGING_DIR }}
           retention-days: 30
 
-      - name: Gecici publish klasorunu temizle
+      - name: Artifact yukle (Web)
+        if: inputs.upload_artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.web_artifact_name }}
+          path: ${{ env.WEB_STAGING_DIR }}
+          retention-days: 30
+
+      - name: Gecici publish klasorlerini temizle
         if: always() && inputs.upload_artifact
-        run: rm -rf "${STAGING_DIR:-}"
+        run: |
+          rm -rf "${API_STAGING_DIR:-}"
+          rm -rf "${WEB_STAGING_DIR:-}"

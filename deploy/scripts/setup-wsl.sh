@@ -34,6 +34,28 @@ EOF
 
 systemctl daemon-reload
 systemctl enable eshopapi
-echo "Kurulum tamam. Ilk deploy sonrasi: systemctl start eshopapi"
+
+cat > /etc/systemd/system/eshopweb.service <<'EOF'
+[Unit]
+Description=eShop Web Storefront .NET Service
+After=network.target docker.service eshopapi.service
+
+[Service]
+WorkingDirectory=/opt/eshopweb
+ExecStart=/usr/share/dotnet/dotnet /opt/eshopweb/Web.dll --urls http://0.0.0.0:5001
+Restart=always
+RestartSec=5
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=DOTNET_USE_POLLING_FILE_WATCHER=1
+Environment=hostBuilder__reloadConfigOnChange=false
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable eshopweb
+echo "Kurulum tamam. Ilk deploy sonrasi: systemctl start eshopapi eshopweb"
+echo "Magaza: http://WSL-IP:5001"
 echo "API: http://WSL-IP:5200/swagger"
-echo "Health: http://WSL-IP:5200/health"
+echo "Health API: http://WSL-IP:5200/health"
