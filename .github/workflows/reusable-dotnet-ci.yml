@@ -1,0 +1,56 @@
+name: Reusable .NET CI
+
+on:
+  workflow_call:
+    inputs:
+      configuration:
+        description: Build configuration
+        required: false
+        type: string
+        default: Release
+      upload_artifact:
+        description: Publish ciktisini artifact olarak yukle
+        required: false
+        type: boolean
+        default: false
+      artifact_name:
+        description: Artifact adi
+        required: false
+        type: string
+        default: eshopapi-publish
+
+jobs:
+  build-test:
+    runs-on: self-hosted
+
+    steps:
+      - name: Kodu indir (checkout)
+        uses: actions/checkout@v4
+
+      - name: .NET build ve test
+        uses: ./.github/actions/dotnet-build-test
+        with:
+          configuration: ${{ inputs.configuration }}
+          solution: eShopOnWeb.sln
+
+      - name: Publish (artifact icin)
+        if: inputs.upload_artifact
+        run: |
+          STAGING=$(mktemp -d)
+          dotnet publish src/PublicApi/PublicApi.csproj \
+            --configuration ${{ inputs.configuration }} \
+            --output "$STAGING" \
+            /p:UseSharedCompilation=false
+          echo "STAGING_DIR=$STAGING" >> "$GITHUB_ENV"
+
+      - name: Artifact yukle
+        if: inputs.upload_artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ env.STAGING_DIR }}
+          retention-days: 30
+
+      - name: Gecici publish klasorunu temizle
+        if: always() && inputs.upload_artifact
+        run: rm -rf "${STAGING_DIR:-}"

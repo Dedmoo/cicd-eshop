@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: wsl-self-hosted-runner
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    uses: ./.github/workflows/reusable-dotnet-ci.yml
+    with:
+      configuration: Release
+      upload_artifact: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      artifact_name: eshopapi-publish

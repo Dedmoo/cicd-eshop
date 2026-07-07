@@ -1,0 +1,55 @@
+name: .NET Build and Test
+description: Surum kontrolu, NuGet cache, restore, build ve test
+
+inputs:
+  configuration:
+    description: Build configuration
+    required: false
+    default: Release
+  solution:
+    description: Solution dosyasi
+    required: false
+    default: eShopOnWeb.sln
+
+runs:
+  using: composite
+  steps:
+    - name: .NET surumunu dogrula
+      shell: bash
+      run: |
+        if ! command -v dotnet >/dev/null 2>&1; then
+          echo "dotnet bulunamadi. WSL uzerinde .NET SDK kurulu olmali."
+          exit 1
+        fi
+        DOTNET_VERSION=$(dotnet --version)
+        echo "Makinedeki .NET SDK: $DOTNET_VERSION"
+        DOTNET_MAJOR=$(echo "$DOTNET_VERSION" | cut -d. -f1)
+        if [ "$DOTNET_MAJOR" -lt 8 ]; then
+          echo "NET 8 veya ustu SDK gerekli, bulunan: $DOTNET_VERSION"
+          exit 1
+        fi
+        if ! dotnet --list-runtimes | grep -q 'Microsoft.NETCore.App 8\.'; then
+          echo "NET 8 runtime eksik. WSL'e bir kez kurulmali."
+          exit 1
+        fi
+        echo "NET 8 runtime mevcut"
+
+    - name: NuGet cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/global.json', 'Directory.Packages.props') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
+    - name: Bagimliliklari yukle (restore)
+      shell: bash
+      run: dotnet restore "${{ inputs.solution }}" /p:UseSharedCompilation=false
+
+    - name: Projeyi derle (build)
+      shell: bash
+      run: dotnet build "${{ inputs.solution }}" --no-restore --configuration ${{ inputs.configuration }} /p:UseSharedCompilation=false
+
+    - name: Testleri calistir
+      shell: bash
+      run: dotnet test "${{ inputs.solution }}" --no-build --configuration ${{ inputs.configuration }} --verbosity normal /p:UseSharedCompilation=false

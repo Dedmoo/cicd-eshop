@@ -1,0 +1,135 @@
+name: Deploy (Canliya Al)
+
+on:
+  workflow_dispatch:
+    inputs:
+      aciklama:
+        description: 'Ne deploy ediliyor (ornek: catalog api guncellendi)'
+        required: true
+        type: string
+      deploy_kaynak:
+        description: 'Deploy kaynagi'
+        required: true
+        type: choice
+        options:
+          - kaynak_koddan_derle
+          - ci_artifact
+        default: kaynak_koddan_derle
+
+run-name: Deploy - ${{ github.actor }} - ${{ inputs.aciklama }}
+
+concurrency:
+  group: wsl-self-hosted-runner
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    environment: production
+
+    steps:
+      - name: Kodu indir (checkout)
+        uses: actions/checkout@v4
+
+      - name: Deploy ozeti
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          COMMIT_AUTHOR=$(git log -1 --pretty=%an)
+          echo "Deploy eden: ${{ github.actor }}"
+          echo "Deploy kaynagi: ${{ inputs.deploy_kaynak }}"
+          echo "Commit: $COMMIT_MSG"
+          echo "## Deploy Ozeti" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Deploy eden: **${{ github.actor }}**" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Kaynak: **${{ inputs.deploy_kaynak }}**" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Commit: $COMMIT_MSG" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Not: ${{ inputs.aciklama }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: SQL Server hazir mi
+        run: bash deploy/scripts/ensure-sql.sh
+
+      - name: .NET build ve test
+        if: inputs.deploy_kaynak == 'kaynak_koddan_derle'
+        uses: ./.github/actions/dotnet-build-test
+        with:
+          configuration: Release
+          solution: eShopOnWeb.sln
+
+      - name: CI artifact indir
+        if: inputs.deploy_kaynak == 'ci_artifact'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_ID=$(gh run list \
+            --repo "${{ github.repository }}" \
+            --workflow=ci.yml \
+            --branch=main \
+            --status=success \
+            --limit=1 \
+            --json databaseId \
+            -q '.[0].databaseId')
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "Basarili CI run bulunamadi."
+            exit 1
+          fi
+          gh run download "$RUN_ID" \
+            -R "${{ github.repository }}" \
+            -n eshopapi-publish \
+            -D /tmp/eshopapi-artifact
+          echo "ARTIFACT_DIR=/tmp/eshopapi-artifact" >> "$GITHUB_ENV"
+
+      - name: Mevcut surumu yedekle
+        run: |
+          if [ -d /opt/eshopapi ]; then
+            rm -rf /opt/eshopapi.previous
+            cp -a /opt/eshopapi /opt/eshopapi.previous
+            echo "- Onceki surum yedeklendi" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Yayinla (kaynak koddan)
+        if: inputs.deploy_kaynak == 'kaynak_koddan_derle'
+        run: |
+          STAGING=$(mktemp -d)
+          dotnet publish src/PublicApi/PublicApi.csproj --configuration Release --output "$STAGING" /p:UseSharedCompilation=false
+          mkdir -p /opt/eshopapi
+          rsync -a --delete "$STAGING/" /opt/eshopapi/
+          rm -rf "$STAGING"
+
+      - name: Yayinla (CI artifact)
+        if: inputs.deploy_kaynak == 'ci_artifact'
+        run: |
+          mkdir -p /opt/eshopapi
+          rsync -a --delete "${ARTIFACT_DIR}/" /opt/eshopapi/
+
+      - name: Deploy bilgisini kaydet
+        run: |
+          cat > /opt/eshopapi/.deploy-info <<EOF
+          deploy_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          commit=${{ github.sha }}
+          deployed_by=${{ github.actor }}
+          deploy_kaynak=${{ inputs.deploy_kaynak }}
+          note=${{ inputs.aciklama }}
+          EOF
+
+      - name: Servisi yeniden baslat
+        run: |
+          pkill -f 'dotnet /opt/eshopapi' || true
+          sleep 1
+          systemctl restart eshopapi
+
+      - name: Canli saglik kontrolu
+        id: health
+        continue-on-error: true
+        run: bash .github/scripts/verify-health.sh http://127.0.0.1:5200
+
+      - name: Saglik basarisiz - otomatik geri al
+        if: steps.health.outcome == 'failure'
+        run: |
+          if [ -d /opt/eshopapi.previous ]; then
+            bash .github/scripts/rollback-to-previous.sh
+            bash .github/scripts/verify-health.sh http://127.0.0.1:5200 || true
+            echo "- Otomatik rollback yapildi" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Deploy basarisiz (health check)
+        if: steps.health.outcome == 'failure'
+        run: exit 1

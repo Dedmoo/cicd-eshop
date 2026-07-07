@@ -1,0 +1,88 @@
+name: Rollback (Onceki Surume Don)
+
+on:
+  workflow_dispatch:
+    inputs:
+      aciklama:
+        description: 'Neden geri aliniyor'
+        required: true
+        type: string
+      rollback_modu:
+        description: 'Geri alma modu'
+        required: true
+        type: choice
+        options:
+          - onceki_klasor
+          - belirli_commit
+        default: onceki_klasor
+      commit_sha:
+        description: 'Belirli commit SHA (belirli_commit modu)'
+        required: false
+        type: string
+
+run-name: Rollback - ${{ github.actor }} - ${{ inputs.aciklama }}
+
+concurrency:
+  group: wsl-self-hosted-runner
+  cancel-in-progress: true
+
+jobs:
+  rollback:
+    runs-on: self-hosted
+    environment: production
+
+    steps:
+      - name: Kodu indir (checkout)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.rollback_modu == 'belirli_commit' && inputs.commit_sha || github.ref }}
+
+      - name: SQL Server hazir mi
+        run: bash deploy/scripts/ensure-sql.sh
+
+      - name: Onceki klasorden geri al
+        if: inputs.rollback_modu == 'onceki_klasor'
+        run: |
+          if [ ! -d /opt/eshopapi.previous ]; then
+            echo "Geri alinacak onceki surum yok"
+            exit 1
+          fi
+          bash .github/scripts/rollback-to-previous.sh
+
+      - name: .NET build ve test (commit rollback)
+        if: inputs.rollback_modu == 'belirli_commit'
+        uses: ./.github/actions/dotnet-build-test
+        with:
+          configuration: Release
+          solution: eShopOnWeb.sln
+
+      - name: Belirli commit deploy et
+        if: inputs.rollback_modu == 'belirli_commit'
+        run: |
+          if [ -z "${{ inputs.commit_sha }}" ]; then
+            echo "commit_sha zorunlu"
+            exit 1
+          fi
+          if [ -d /opt/eshopapi ]; then
+            rm -rf /opt/eshopapi.previous
+            cp -a /opt/eshopapi /opt/eshopapi.previous
+          fi
+          STAGING=$(mktemp -d)
+          dotnet publish src/PublicApi/PublicApi.csproj --configuration Release --output "$STAGING" /p:UseSharedCompilation=false
+          mkdir -p /opt/eshopapi
+          rsync -a --delete "$STAGING/" /opt/eshopapi/
+          rm -rf "$STAGING"
+          pkill -f 'dotnet /opt/eshopapi' || true
+          sleep 1
+          systemctl restart eshopapi
+
+      - name: Canli saglik kontrolu
+        run: bash .github/scripts/verify-health.sh http://127.0.0.1:5200
+
+      - name: Rollback ozeti
+        if: always()
+        run: |
+          echo "## Rollback Ozeti" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Yapan: **${{ github.actor }}**" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Mod: **${{ inputs.rollback_modu }}**" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Not: ${{ inputs.aciklama }}" >> "$GITHUB_STEP_SUMMARY"
