@@ -16,4 +16,5 @@ jobs:
     with:
       configuration: Release
       upload_artifact: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-      artifact_name: eshopapi-publish
+      api_artifact_name: eshopapi-publish
+      web_artifact_name: eshopweb-publish
