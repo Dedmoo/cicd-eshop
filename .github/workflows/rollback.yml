@@ -23,7 +23,7 @@ on:
 run-name: Rollback - ${{ github.actor }} - ${{ inputs.aciklama }}
 
 concurrency:
-  group: wsl-self-hosted-${{ github.repository }}
+  group: wsl-self-hosted-${{ github.repository }}-deploy
   cancel-in-progress: true
 
 jobs:
