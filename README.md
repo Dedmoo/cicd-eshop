@@ -1,3 +1,19 @@
+# CI/CD Pipeline (Creamobile) — eShopOnWeb
+
+> **EN:** This fork adds an end-to-end CI/CD pipeline (build/test, approval-gated production deploy, health-check-driven automatic rollback) on a self-hosted GitHub Actions runner. Full technical documentation: [`docs/`](./docs/README.md) — [Türkçe](./docs/ci-cd-pipeline.tr.md) · [English](./docs/ci-cd-pipeline.en.md).
+>
+> **TR:** Bu çatal (fork), kendinden barındırmalı bir GitHub Actions çalıştırıcısı üzerinde uçtan uca bir CI/CD boru hattı ekler (derleme/test, onay kapılı üretim dağıtımı, sağlık kontrolüne dayalı otomatik geri alma). Tam teknik dokümantasyon: [`docs/`](./docs/README.md) — [Türkçe](./docs/ci-cd-pipeline.tr.md) · [English](./docs/ci-cd-pipeline.en.md).
+
+## Tanıtım videosu / Demo video
+
+**TR:** CI/CD kurulum ve deploy akışının kısa tanıtımı: [video/cicd-tanitim.mp4](./video/cicd-tanitim.mp4) (~11 MB)
+
+**EN:** Short walkthrough of the CI/CD setup and deploy flow: [video/cicd-tanitim.mp4](./video/cicd-tanitim.mp4) (~11 MB)
+
+Şablon (blueprint) deposu: [dotnet-cicd-template](https://github.com/Dedmoo/dotnet-cicd-template)
+
+---
+
 # Microsoft eShopOnWeb ASP.NET Core Reference Application
 
 > eShop sample applications have been updated and moved to https://github.com/dotnet/eShop. Active development will continue there. We also recommend the [Reliable Web App](https://learn.microsoft.com/azure/architecture/web-apps/guides/reliable-web-app/overview) patterns guidance for building web apps with enterprise app patterns.
